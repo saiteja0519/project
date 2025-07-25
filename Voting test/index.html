@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Online Test Platform</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    .page {
+      background: #fff;
+      margin: auto;
+      max-width: 700px;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 0 10px #ccc;
+    }
+    input, button, textarea {
+      margin: 5px;
+      padding: 8px;
+      font-size: 16px;
+    }
+    input[type="text"], input[type="email"], input[type="password"], input[type="number"] {
+      width: 80%;
+    }
+    textarea {
+      width: 90%;
+    }
+    canvas {
+      margin: 10px 0;
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <div id="homePage" class="page">
+    <h1>📚 Online Test Platform</h1>
+    <button onclick="showPage('loginPage')">Login as Admin</button>
+    <button onclick="showPage('contestantLoginPage')">Login as Contestant</button>
+  </div>
+
+  <div id="loginPage" class="page" style="display:none;">
+    <h2>Admin Login</h2>
+    <form onsubmit="return adminLogin();">
+      <input type="email" id="adminEmail" placeholder="Email" required /><br />
+      <input type="password" id="adminPassword" placeholder="Password" required /><br />
+      <input type="password" id="adminRePassword" placeholder="Re-enter Password" required /><br /> <!-- New Field -->
+      <button type="submit">Login</button>
+    </form>
+    <button onclick="showPage('homePage')">Back</button>
+  </div>
+
+  <div id="adminDashboard" class="page" style="display:none;">
+    <h2>Admin Dashboard</h2>
+
+    <h3>Upload Questions from Excel</h3>
+    <input type="file" id="questionFile" accept=".xlsx, .xls" />
+    <button onclick="loadQuestions()">Upload</button>
+
+    <h3>Manual Question Entry</h3>
+    <input type="number" id="numManualQuestions" min="1" placeholder="Number of Questions" />
+    <button onclick="startManualInput()">Begin Manual Entry</button>
+    <button onclick="reEnterQuestions()">Re-enter Questions</button> <!-- New Button -->
+
+    <div id="manualInputContainer"></div>
+    <button id="manualSubmitBtn" style="display:none;" onclick="submitManualQuestions()">Submit Questions</button>
+
+    <h3>Shuffle Questions</h3>
+    <label><input type="checkbox" id="shuffleMode" /> Enable Shuffle</label><br />
+
+    <button onclick="simulateUpload()">Use Sample Questions</button><br />
+    <button onclick="logout()">Logout</button>
+  </div>
+
+  <div id="contestantLoginPage" class="page" style="display:none;">
+    <h2>Contestant Login</h2>
+    <form onsubmit="return contestantLogin();">
+      <input type="email" id="contestantEmail" placeholder="Email" required /><br />
+      <canvas id="captchaCanvas" width="100" height="40" style="border:1px solid #ccc;"></canvas><br />
+      <input type="text" id="captchaInput" placeholder="Enter CAPTCHA" required /><br />
+      <button type="button" onclick="generateCaptcha()">Refresh CAPTCHA</button><br />
+      <button type="submit">Login</button>
+    </form>
+    <button onclick="showPage('homePage')">Back</button>
+  </div>
+
+  <div id="instructionsPage" class="page" style="display:none;">
+    <h2>Instructions</h2>
+    <ul>
+      <li>Each question has multiple choices.</li>
+      <li>Select one option per question.</li>
+      <li>Navigate between questions.</li>
+    </ul>
+    <button onclick="startTest()">Start Test</button>
+  </div>
+
+  <div id="testPage" class="page" style="display:none;">
+    <h2>Test In Progress</h2>
+    <div id="questionContainer"></div>
+    <button onclick="prevQuestion()">Previous</button>
+    <button onclick="nextQuestion()">Next</button>
+  </div>
+
+  <div id="completionPage" class="page" style="display:none;">
+    <h2>✅ Test Completed</h2>
+    <p>Thank you for participating!</p>
+    <button onclick="showPage('homePage')">Go Home</button>
+  </div>
+
+  <script>
+    let questions = [], shuffledQuestions = [], currentQuestionIndex = 0;
+    let captchaCode = '';
+
+    function showPage(id) {
+      document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
+      document.getElementById(id).style.display = 'block';
+    }
+
+    function adminLogin() {
+      const email = adminEmail.value;
+      const pass = adminPassword.value;
+      const rePass = adminRePassword.value; 
+
+      if (email && pass && pass === rePass) { 
+        showPage('adminDashboard');
+      } else {
+        alert('Enter valid credentials and ensure passwords match');
+      }
+      return false;
+    }
+
+    function logout() {
+      showPage('homePage');
+    }
+
+    function loadQuestions() {
+      const file = questionFile.files[0];
+      if (!file) return alert('Select an Excel file');
+      const reader = new FileReader();
+      reader.onload = e => {
+        const wb = XLSX.read(e.target.result, {type:'binary'});
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const data = XLSX.utils.sheet_to_json(sheet);
+        questions = data.map(q => ({
+          question: q.question,
+          options: typeof q.options === 'string' ? q.options.split(',') : q.options,
+          answer: q.answer
+        }));
+        alert('Questions loaded successfully!');
+      };
+      reader.readAsBinaryString(file);
+    }
+
+    function simulateUpload() {
+      questions = [
+        {question: '2+2?', options:['3','4','5'], answer:'4'},
+        {question: 'Capital of France?', options:['Rome','Paris','Berlin'], answer:'Paris'}
+      ];
+      alert('Sample questions loaded');
+    }
+
+    function startManualInput() {
+      const num = parseInt(numManualQuestions.value);
+      if (!num || num <= 0) return alert('Enter number of questions');
+      const container = manualInputContainer;
+      container.innerHTML = '';
+      for (let i = 0; i < num; i++) {
+        container.innerHTML += `
+          <h4>Question ${i+1}</h4>
+          <input id="q${i}" placeholder="Question" /><br />
+          <input id="q${i}_optA" placeholder="Option A" />
+          <input id="q${i}_optB" placeholder="Option B" />
+          <input id="q${i}_optC" placeholder="Option C" />
+          <input id="q${i}_optD" placeholder="Option D" /><br />
+          <input id="q${i}_ans" placeholder="Correct answer (A/B/C/D)" /><hr />
+        `;
+      }
+      manualSubmitBtn.style.display = 'inline-block';
+    }
+
+    function submitManualQuestions() {
+      const num = parseInt(numManualQuestions.value);
+      const newQ = [];
+      for (let i = 0; i < num; i++) {
+        const q = document.getElementById(`q${i}`).value;
+        const opts = ['A','B','C','D'].map(l => document.getElementById(`q${i}_opt${l}`).value);
+        const ansLabel = document.getElementById(`q${i}_ans`).value.toUpperCase();
+        const idx = ['A','B','C','D'].indexOf(ansLabel);
+        if (q && opts.every(o => o) && idx !== -1) {
+          newQ.push({question: q, options: opts, answer: opts[idx]});
+        } else {
+          alert(`Invalid input in question ${i+1}`);
+          return;
+        }
+      }
+      questions = newQ;
+      alert('Manual questions submitted!');
+    }
+
+    // New function to clear questions and manual inputs
+    function reEnterQuestions() {
+      if (confirm('Are you sure you want to clear all questions and re-enter?')) {
+        questions = [];
+        manualInputContainer.innerHTML = '';
+        manualSubmitBtn.style.display = 'none';
+        numManualQuestions.value = '';
+        alert('You can now re-enter questions manually or upload new ones.');
+      }
+    }
+
+    function generateCaptcha() {
+      captchaCode = Math.random().toString(36).substring(2,8).toUpperCase();
+      const ctx = captchaCanvas.getContext('2d');
+      ctx.clearRect(0,0,100,40);
+      ctx.font = '24px Arial';
+      ctx.fillText(captchaCode, 10, 30);
+    }
+
+    function contestantLogin() {
+      const email = contestantEmail.value;
+      const input = captchaInput.value.trim().toUpperCase();
+      if (email && input === captchaCode) {
+        showPage('instructionsPage');
+      } else {
+        alert('Incorrect CAPTCHA');
+        generateCaptcha();
+      }
+      return false;
+    }
+
+    function startTest() {
+      if (questions.length === 0) return alert('No questions loaded');
+      shuffledQuestions = shuffleMode.checked ? questions.slice().sort(() => Math.random() - 0.5) : questions;
+      currentQuestionIndex = 0;
+      showQuestion();
+      showPage('testPage');
+    }
+
+    function showQuestion() {
+      const question = shuffledQuestions[currentQuestionIndex];
+      questionContainer.innerHTML = `
+        <h3>${question.question}</h3>
+        ${question.options.map((opt, index) => `<label><input type="radio" name="answer" value="${opt}">${opt}</label><br />`).join('')}
+      `;
+    }
+
+    function prevQuestion() {
+      if (currentQuestionIndex > 0) {
+        currentQuestionIndex--;
+        showQuestion();
+      }
+    }
+
+    function nextQuestion() {
+      if (currentQuestionIndex < shuffledQuestions.length - 1) {
+        currentQuestionIndex++;
+        showQuestion();
+      } else {
+        showPage('completionPage');
+      }
+    }
+
+    window.onload = function() {
+      generateCaptcha();
+    };
+  </script>
+</body>
+</html>
